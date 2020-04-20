@@ -291,8 +291,8 @@ func header(w http.ResponseWriter, r *http.Request, title string) bool {
 	fmt.Fprintf(w, "<title>%v</title>\n", html.EscapeString(title))
 	if r.Host != "" {
 		fmt.Fprintf(w, "<script type=\"text/javascript\">\n")
-		fmt.Fprintf(w, "navigator.registerProtocolHandler('magnet','http://%v/?q=add&url=%%s','Torrent');\n",
-			r.Host)
+		fmt.Fprintf(w, "navigator.registerProtocolHandler('magnet','%v/?q=add&url=%%s','Torrent');\n",
+			prefixUrl(r))
 		fmt.Fprintf(w, "</script>\n")
 	}
 	fmt.Fprintf(w, "</head><body>\n")
@@ -329,7 +329,7 @@ func directory(w http.ResponseWriter, r *http.Request,
 	if done {
 		return
 	}
-	err := torrentEntry(ctx, w, t, path)
+	err := torrentEntry(ctx, w, t, prefixUrl(r), path)
 	if err != nil {
 		return
 	}
@@ -370,13 +370,23 @@ func pathUrl(p []string) string {
 	return string(b[0 : len(b)-1])
 }
 
-func torrentFile(w io.Writer, hash hash.Hash, path []string, length int64,
+func prefixUrl(r *http.Request) string {
+	if r.TLS != nil && config.HTTPBasicAuth {
+		prefix := fmt.Sprintf("https://%v:%v@%v",
+			config.HTTPBasicAuthUser, config.HTTPBasicAuthPassword, r.Host)
+		return prefix
+	}
+	return ""
+}
+
+func torrentFile(w io.Writer, prefix string, hash hash.Hash, path []string, length int64,
 	available int) {
 	p := pathUrl(path)
 	fmt.Fprintf(w,
-		"<tr><td><a href=\"/%v/%v\">%v</a></td>"+
+		"<tr><td><a href=\"%v/%v/%v\">%v</a></td>"+
 			"<td>%v</td><td>%v</td></tr>\n",
-		hash, p, html.EscapeString(strings.Join(path, "/")),
+
+		prefix, hash, p, html.EscapeString(strings.Join(path, "/")),
 		length, available)
 }
 
@@ -401,7 +411,7 @@ func torrentDir(w io.Writer, hash hash.Hash, path []string, lastdir []string) {
 }
 
 func torrentEntry(ctx context.Context, w http.ResponseWriter,
-	t *tor.Torrent, dir []string) error {
+	t *tor.Torrent, prefix string, dir []string) error {
 	hash := t.Hash
 	name := t.Name
 	if !t.InfoComplete() {
@@ -410,9 +420,9 @@ func torrentEntry(ctx context.Context, w http.ResponseWriter,
 		}
 		name = name + "<em>(incomplete)</em>"
 	}
-	fmt.Fprintf(w, "<p><a href=\"/%v/\">%v</a> ", hash, name)
-	fmt.Fprintf(w, "<a href=\"/%v.torrent\">%v</a> ", hash, hash)
-	fmt.Fprintf(w, "(<a href=\"/%v.m3u\">playlist</a>): ", hash)
+	fmt.Fprintf(w, "<p><a href=\"%v/%v/\">%v</a> ", prefix, hash, name)
+	fmt.Fprintf(w, "<a href=\"%v/%v.torrent\">%v</a> ", prefix, hash, hash)
+	fmt.Fprintf(w, "(<a href=\"%v/%v.m3u\">playlist</a>): ", prefix, hash)
 	c := t.Pieces.Bitmap().Count()
 	if t.InfoComplete() {
 		fmt.Fprintf(w, "%v bytes in %v+%v/%v pieces (%v bytes each), ",
@@ -437,7 +447,7 @@ func torrentEntry(ctx context.Context, w http.ResponseWriter,
 		}
 		if len(dir) == 0 {
 			available, _ := t.GetAvailable()
-			torrentFile(w, t.Hash, []string{t.Name},
+			torrentFile(w, prefix, t.Hash, []string{t.Name},
 				t.Pieces.Length(),
 				available.AvailableRange(t,
 					0, t.Pieces.Length()))
@@ -465,7 +475,7 @@ func torrentEntry(ctx context.Context, w http.ResponseWriter,
 				torrentDir(w, t.Hash, dir, lastdir)
 				lastdir = dir
 			}
-			torrentFile(w, t.Hash, f.Path, f.Length,
+			torrentFile(w, prefix, t.Hash, f.Path, f.Length,
 				available.AvailableRange(t, f.Offset, f.Length))
 		}
 	}
@@ -534,7 +544,7 @@ func torrents(w http.ResponseWriter, r *http.Request) {
 				bytes.Compare(tors[i].Hash, tors[j].Hash) < 0)
 	})
 	for _, t := range tors {
-		err := torrentEntry(ctx, w, t, []string{})
+		err := torrentEntry(ctx, w, t, prefixUrl(r), []string{})
 		if err != nil {
 			return
 		}
@@ -848,11 +858,11 @@ func torfile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func m3uentry(w http.ResponseWriter, host string, hash hash.Hash, path []string) {
+func m3uentry(w http.ResponseWriter, prefix string, hash hash.Hash, path []string) {
 	fmt.Fprintf(w, "#EXTINF:-1,%v\n",
 		strings.Replace(path[len(path)-1], ",", "", -1))
-	fmt.Fprintf(w, "http://%v/%v/%v\n",
-		host, hash, pathUrl(path))
+	fmt.Fprintf(w, "%v/%v/%v\n",
+		prefix, hash, pathUrl(path))
 }
 
 func playlist(w http.ResponseWriter, r *http.Request,
@@ -895,9 +905,18 @@ func playlist(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	prefix := prefixUrl(r)
+	if prefix == "" {
+		if r.TLS == nil {
+			prefix = fmt.Sprintf("http://%v", r.Host)
+		} else {
+			prefix = fmt.Sprintf("https://%v", r.Host)
+		}
+	}
+
 	fmt.Fprintf(w, "#EXTM3U\n")
 	if t.Files == nil {
-		m3uentry(w, r.Host, hash, []string{t.Name})
+		m3uentry(w, prefix, hash, []string{t.Name})
 	} else {
 		a := make([]int, len(t.Files))
 		for i := range a {
@@ -910,7 +929,7 @@ func playlist(w http.ResponseWriter, r *http.Request,
 		for _, i := range a {
 			path := t.Files[i].Path
 			if within(path, dir) {
-				m3uentry(w, r.Host, hash, path)
+				m3uentry(w, prefix, hash, path)
 			}
 		}
 	}
