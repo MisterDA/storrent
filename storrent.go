@@ -34,7 +34,7 @@ import (
 
 func main() {
 	var proxyURL, mountpoint string
-	var cpuprofile, memprofile, mutexprofile, tracefile string
+	var cpuprofile, memprofile, mutexprofile, tracefile, datadir string
 	var doPortmap bool
 
 	mem, err := physmem.Total()
@@ -51,6 +51,12 @@ func main() {
 		"`port` used for BitTorrent and DHT traffic")
 	flag.StringVar(&config.HTTPAddr, "http", "[::1]:8088",
 		"web server address")
+	flag.BoolVar(&config.UseHTTPS, "use-https", false,
+		"use a secure web server")
+	flag.StringVar(&config.HTTPSAddr, "https", ":8089",
+		"secure web server address")
+	flag.StringVar(&datadir, "data", "data",
+		"data `directory`")
 	flag.Int64Var(&config.MemoryMark, "mem", mem/2,
 		"target memory usage in `bytes`")
 	flag.StringVar(&cpuprofile, "cpuprofile", "",
@@ -292,13 +298,28 @@ func main() {
 
 	go listen(listener)
 
-	http.Handle("/", thttp.NewHandler(ctx))
+	httpMux := http.NewServeMux()
+	httpMux.Handle("/", thttp.NewHandler(ctx))
+
 	go func() {
 		log.Printf("Listening on http://%v", config.HTTPAddr)
-		err := http.ListenAndServe(config.HTTPAddr, nil)
+		err := http.ListenAndServe(config.HTTPAddr, httpMux)
 		log.Printf("ListenAndServe: %v", err)
 		return
 	}()
+
+	if config.UseHTTPS {
+		go func() {
+			log.Printf("Listening on https://%v", config.HTTPSAddr)
+			err := http.ListenAndServeTLS(
+				config.HTTPSAddr,
+				filepath.Join(datadir, "cert.pem"),
+				filepath.Join(datadir, "key.pem"),
+				httpMux)
+			log.Printf("ListenAndServeTLS: %v", err)
+			return
+		}()
+	}
 
 	go func() {
 		min := 250 * time.Millisecond

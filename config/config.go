@@ -29,6 +29,8 @@ func SetExternalIPv4Port(port int, tcp bool) {
 }
 
 var HTTPAddr string
+var UseHTTPS bool
+var HTTPSAddr string
 
 var DHTBootstrap string
 var DhtID hash.Hash

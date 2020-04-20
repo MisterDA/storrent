@@ -35,19 +35,23 @@ func NewHandler(ctx context.Context) http.Handler {
 }
 
 func (handler *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	var err error
+	if r.TLS == nil {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	// The server is only bound to localhost, but an attacker might be
-	// able to cause the user's browser to connect to localhost by
-	// manipulating the DNS.  Prevent this by making sure that the
-	// browser thinks it's connecting to localhost.
-	if host != "localhost" && net.ParseIP(host) == nil {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
+		// The server is only bound to localhost, but an
+		// attacker might be able to cause the user's browser
+		// to connect to localhost by manipulating the DNS.
+		// Prevent this by making sure that the browser thinks
+		// it's connecting to localhost.
+		if host != "localhost" && net.ParseIP(host) == nil {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
 	}
 
 	path := r.URL.Path
@@ -790,7 +794,7 @@ func hknown(w http.ResponseWriter, kp *known.Peer, t *tor.Torrent) {
 	var flags string
 	if buf.Len() > 2 {
 		b := buf.Bytes()
-		flags = string(b[0:len(b) - 2])
+		flags = string(b[0 : len(b)-2])
 	} else {
 		flags = buf.String()
 	}
