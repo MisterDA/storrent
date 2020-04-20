@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
 	"syscall"
 	"time"
 
@@ -57,6 +58,12 @@ func main() {
 		"secure web server address")
 	flag.StringVar(&datadir, "data", "data",
 		"data `directory`")
+	flag.BoolVar(&config.HTTPBasicAuth, "basicauth", true,
+		"Use HTTP Basic Auth over HTTPS")
+	flag.StringVar(&config.HTTPBasicAuthUser, "basicauthuser", "",
+		"HTTP Basic Auth `username`")
+	flag.StringVar(&config.HTTPBasicAuthPassword, "basicauthpassword", "",
+		"HTTP Basic Auth `password`")
 	flag.Int64Var(&config.MemoryMark, "mem", mem/2,
 		"target memory usage in `bytes`")
 	flag.StringVar(&cpuprofile, "cpuprofile", "",
@@ -86,6 +93,14 @@ func main() {
 		"log all BitTorrent messages")
 
 	flag.Parse()
+
+	if ok := config.HTTPBasicAuth &&
+		(config.HTTPBasicAuthUser == "" || config.HTTPBasicAuthPassword == "" ||
+			strings.ContainsAny(config.HTTPBasicAuthUser, ":@") ||
+			strings.ContainsAny(config.HTTPBasicAuthPassword, ":@")); ok {
+		log.Print("Invalid HTTP Basic Auth user name or password.")
+		return
+	}
 
 	err = config.SetDefaultProxy(proxyURL)
 	if err != nil {

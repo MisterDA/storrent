@@ -52,6 +52,14 @@ func (handler *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
+	} else if config.HTTPBasicAuth {
+		user, pass, ok := r.BasicAuth()
+
+		if !ok || config.HTTPBasicAuthUser != user || config.HTTPBasicAuthPassword != pass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Unauthorized.", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	path := r.URL.Path

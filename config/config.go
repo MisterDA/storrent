@@ -32,6 +32,9 @@ var HTTPAddr string
 var UseHTTPS bool
 var HTTPSAddr string
 
+var HTTPBasicAuth bool
+var HTTPBasicAuthUser, HTTPBasicAuthPassword string
+
 var DHTBootstrap string
 var DhtID hash.Hash
 
