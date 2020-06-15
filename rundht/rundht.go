@@ -24,12 +24,12 @@ import (
 
 func init() {
 	dhtFile := ""
-	configDir, err := os.UserConfigDir()
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		log.Printf("Couldn't determine config dir: %v", err)
+		log.Printf("Couldn't determine cache dir: %v", err)
 	} else {
 		dhtFile = filepath.Join(
-			filepath.Join(configDir, "storrent"),
+			filepath.Join(cacheDir, "storrent"),
 			"dht.dat",
 		)
 	}
